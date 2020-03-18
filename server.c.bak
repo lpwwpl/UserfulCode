@@ -1,0 +1,127 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include "comm.h"
+#include "employee.h"
+#include <pthread.h>
+#include "fun.h"
+#define PORT 8080
+void *thread(int connfd);
+int main() {  
+  
+	int sockfd = socket(AF_INET, SOCK_STREAM,0);  
+	if(sockfd < 0){  
+        	perror("socket");  
+        	exit(1); 
+	} 
+	struct sockaddr_in serveraddr;  
+	bzero((char *)&serveraddr,sizeof(serveraddr));  
+	serveraddr.sin_family = AF_INET;  
+	serveraddr.sin_addr.s_addr = htonl(INADDR_ANY);  
+	serveraddr.sin_port = htons(PORT);  
+	if(bind(sockfd,(struct sockaddr *)&serveraddr,sizeof(serveraddr)) < 0){  
+        	perror("connect");  
+        	exit(1);  
+	}  
+  
+	if(listen(sockfd,1024) < 0){  
+        	perror("listen error");  
+        	exit(1);  
+	}  	
+	struct sockaddr_in clientaddr;  
+	int clientlen, connfd;  
+	clientlen = sizeof(clientaddr);  
+	pid_t pid;
+	while(1){  
+		if(-1 == (connfd = accept(sockfd,(struct sockaddr *)&clientaddr, &clientlen)))
+		perror("accept");  
+	//	pthread_t tid;  
+		printf("Accepted!\n");  
+	//	pthread_create(&tid,NULL,thread,connfd);  
+		
+		if(-1==(pid = fork())) {
+			perror("fork");
+		} else if(pid > 0) {
+			close(connfd);
+
+		} else {
+			thread(connfd);
+		}
+	}  
+	EXIT_SUCCESS;  
+}  
+
+void *thread(int connfd) {
+	data_t data;
+	data_t reply;
+	infor_t *infor;
+	infor = malloc(sizeof(infor_t));
+	reply.flag=FLAG_ERR;
+	while(1) {
+		recv(connfd,&data, sizeof(data), 0);
+		
+		switch(data.flag) {
+			case FLAG_ADD:
+				if(server_insert(&data.infor)==0) {
+					reply.flag = FLAG_ACK;
+					strcpy(reply.ret,"add success");
+				} else {
+					strcpy(reply.ret,"add fail");
+				}
+				send(connfd,&reply,255,0);
+				break;
+			case FLAG_DEL:
+				if(server_delete(data.infor.id)==0) {
+					reply.flag = FLAG_ACK;
+					strcpy(reply.ret,"del success");
+				} else {
+					strcpy(reply.ret,"del fail");
+				}
+				send(connfd,&reply,255,0);
+				break;
+			case FLAG_SEARCH:
+				infor = server_search(&(data.infor));
+				printf("%s",infor->id);
+				fflush(stdout);
+				if(NULL == infor) {
+					reply.flag = FLAG_ERR;
+					strcpy(reply.ret,"search fail,no such user");
+				} else {
+					strcpy(reply.infor.id ,infor->id);	
+					strcpy(reply.infor.name, infor->name);
+					strcpy(reply.infor.sex, infor->sex);
+					strcpy(reply.infor.num, infor->num);
+					strcpy(reply.infor.date,infor->date);
+					reply.flag = FLAG_ACK;
+				}
+				send(connfd,&reply,255,0);
+				break;
+			case FLAG_MODIFY:
+				if(server_modify(&(data.infor))==0) {
+					reply.flag = FLAG_ACK;
+					strcpy(reply.ret,"modify success");
+				} else {
+					strcpy(reply.ret,"modify fail");
+				}
+				send(connfd,&reply,255,0);
+				break;
+			case FLAG_LOGOUT:
+				if(data.flag==FLAG_LOGOUT) {
+					reply.flag = FLAG_ACK;
+					strcpy(reply.ret,"logout success");
+				} else {
+					reply.flag = FLAG_ERR;
+					strcpy(reply.ret,"logout fail");
+				}
+				send(connfd,&reply,255,0);
+				break;
+			default:
+				break;
+		}
+	}
+	return NULL;    
+}
